@@ -3,11 +3,22 @@
 **What you can verify from this repository in one minute, what you cannot, and
 one divergence worth knowing before you touch production.**
 
-This repository is a *migration seed*: 16 tracked files extracted verbatim from
-`etzhayyim/root` at `60-apps/etzhayyim-project-outreach` (see `migration.edn`
-for the source revision and tree hash). The outreach business logic — the
-LangGraph research→draft loop, the DNC gate, the Resend sends — **is not in this
-repository**. What is here is the edge facade and its Svelte appview.
+This repository is a *migration seed*: originally 16 tracked files extracted
+verbatim from `etzhayyim/root` at `60-apps/etzhayyim-project-outreach` (see
+`migration.edn` for the source revision and tree hash). The outreach business
+logic — the LangGraph research→draft loop, the DNC gate, the Resend sends —
+**is not in this repository**. What is here is the edge facade and its
+appview UI.
+
+**2026-09-05 update**: the appview UI was rewritten from SvelteKit
+(`svelte/`, deleted) to ClojureScript + reagent on `appkit.core` +
+`kotoba-ui.core` (top-level `src/cloud_itonami/outreach/*.cljs`, built by
+shadow-cljs into `web/dist`, served via `wrangler.jsonc`'s `assets` binding).
+That migration also **changed which handler `wrangler.jsonc`'s `main` points
+at** — see §2, which this update does not soften: the divergence documented
+below was real, the migration resolved it by deletion rather than by owner
+decision, and the deleted handler is preserved-but-unwired rather than gone
+so the choice can still be revisited.
 
 Every command below marked ✅ was run against this tree. Commands marked
 ⚠ NOT WALKED say why, rather than being presented as if they had been; a
@@ -26,7 +37,7 @@ from Node 23); keep it anyway, because it is required on 22.6–22.x:
 ```bash
 cd appview/outreach-otch0001
 
-cat > /tmp/walk.mjs <<'EOF'
+cat > /tmp/walk.mjs <<'INNER_EOF'
 const app = (await import(process.argv[2])).default;
 for (const [label, req] of [
   ["GET /health", new Request("https://outreach.etzhayyim.com/health")],
@@ -37,7 +48,7 @@ for (const [label, req] of [
   const res = await app.fetch(req, {});
   console.log(label, "->", res.status, await res.text());
 }
-EOF
+INNER_EOF
 
 node --experimental-strip-types /tmp/walk.mjs "$PWD/src/app.ts"
 ```
@@ -59,51 +70,55 @@ syntax.
 
 ---
 
-## 2. ⚠ The file you just ran is not the file that deploys
+## 2. ⚠ `src/app.ts` is now the file that deploys — it was not always the case
 
-Verified against this tree on 2026-08-15:
+Verified against this tree on 2026-08-15, `src/app.ts` and the (now deleted)
+SvelteKit route `svelte/src/routes/xrpc/[...path]/+server.ts` **diverged**:
 
-| | `src/app.ts` | `svelte/src/routes/xrpc/[...path]/+server.ts` |
+| | `src/app.ts` | deleted SvelteKit route (preserved below) |
 |---|---|---|
-| Reached by `wrangler deploy`? | **no** | **yes** |
-| Imported by anything here? | no — nothing references it | yes, by SvelteKit routing |
-| `/health` endpoint | yes | **no route serves `/health`** |
-| Upstream | `dispatcher.etzhayyim.com/xrpc/<nsid>` | `mcp.etzhayyim.com` as an MCP `tools/call` |
-| Upstream configured in `wrangler.jsonc`? | no `DISPATCHER_URL` var exists | yes, `AGENTGATEWAY_MCP_ROUTER_URL` |
-| Malformed JSON body | `400 InvalidJson` | `.catch(() => ({}))` — **the tool is called with `{}`** |
+| Reached by `wrangler deploy` on 2026-08-15? | **no** | **yes** |
+| Reached by `wrangler deploy` today (post 2026-09-05 migration)? | **yes** — `wrangler.jsonc` `main` now points here | **no** — file no longer exists in the deploy tree |
+| `/health` endpoint | yes | no route served it |
+| Upstream | `dispatcher.etzhayyim.com/xrpc/<nsid>` (or `env.DISPATCHER_URL`) | `mcp.etzhayyim.com` as an MCP `tools/call` (or `env.AGENTGATEWAY_MCP_ROUTER_URL`) |
+| Upstream configured in `wrangler.jsonc` `vars` today? | **no** — no `DISPATCHER_URL` key exists, so production falls back to the hardcoded default | yes — `AGENTGATEWAY_MCP_ROUTER_URL` is still declared in `vars`, but nothing in the deployed code reads it anymore |
+| Malformed JSON body | `400 InvalidJson` | `.catch(() => ({}))` — the tool was called with `{}` |
 
-How to confirm the first row yourself:
+**What changed and how**: the 2026-09-05 Svelte→ClojureScript frontend
+migration (commit that produced this file's current shape) deleted
+`svelte/` wholesale — including this XRPC route, which was *not* frontend,
+it was the production-authoritative backend handler per the row above — and
+repointed `wrangler.jsonc`'s `main` at `src/app.ts`, the handler this
+document had explicitly flagged as **not** reached by `wrangler deploy`.
 
-```bash
-# main points at the SvelteKit build output, not at src/
-grep '"main"' appview/outreach-otch0001/wrangler.jsonc
-#     "main": "svelte/.svelte-kit/cloudflare/_worker.js",
+**This was not a decision this document asked for lightly.** §2 (as originally
+written, 2026-08-15) said: *"Which of the two handlers is authoritative is a
+decision for the app's owner, and guessing would be worse than naming it."*
+The migration resolved the divergence by deletion, not by a recorded owner
+decision — there is no commit message, ADR, or note anywhere in this repo's
+history explaining *why* `dispatcher.etzhayyim.com` (with no configured
+`DISPATCHER_URL`/`DISPATCHER_INTERNAL_SECRET`) should now be authoritative
+over `mcp.etzhayyim.com` (which *was* live and *was* configured).
 
-# and no route serves /health. -c prints a count per file, so read the zeros:
-grep -rc health appview/outreach-otch0001/svelte/src/ ; echo "exit=$?"
-#   appview/outreach-otch0001/svelte/src/app.html:0
-#   appview/outreach-otch0001/svelte/src/routes/+page.svelte:0
-#   appview/outreach-otch0001/svelte/src/routes/xrpc/[...path]/+server.ts:0
-#   exit=1
-```
+The deleted route's exact source (byte-identical to what was live on
+2026-08-15) is preserved, unwired, at
+`appview/outreach-otch0001/src/xrpc-proxy.ts` — it will not run as-is (it
+imports from `@sveltejs/kit`, which is gone from this repo's dependency
+tree), but it is not lost. **Reviving it, keeping `src/app.ts` as
+authoritative, or something else entirely remains an undecided product
+question for the app's owner** — this document still does not decide it,
+it now additionally records that the decision was made by omission rather
+than by a name.
 
-Three files, zero matches in each, exit 1. Both commands are shown with their
-real output including the noise, because a step whose printed output does not
-match what happens teaches the reader to stop looking.
+Two consequences for an operator, updated for the current tree:
 
-Two consequences for an operator:
-
-- **Do not health-check this service at `/health`.** In production that path
-  falls through to the SvelteKit 404. The endpoint exists only in the file that
-  is not deployed, which is a worse situation than not having one, because
-  reading the source suggests it is there.
-- **A malformed request to production does not fail.** It reaches the MCP router
-  with empty arguments. Whether that is acceptable is a question for whoever owns
-  the tool contract; it is recorded here because nothing else records it.
-
-This divergence is not resolved by this document. Which of the two handlers is
-authoritative is a decision for the app's owner, and guessing would be worse
-than naming it.
+- **`/health` is reachable today** (it was not on 2026-08-15) — but confirm
+  this against a real `wrangler deploy`/`wrangler dev` before relying on it;
+  §3 explains why that has still not been walked from this repository.
+- **A malformed XRPC request now fails loudly** (`400 InvalidJson`) instead
+  of silently reaching the MCP router with empty arguments. That is a
+  behavior change in production request handling, not just in the frontend,
+  and it happened as a side effect of a UI migration.
 
 ---
 
@@ -111,23 +126,27 @@ than naming it.
 
 - **Start the outreach worker.** `CLAUDE.md` says
   `cd 40-engine/kotoba/crates/kotoba-kotodama/py && python -m kotodama.outreach_worker_main`.
-  That path is in the old monorepo and **does not exist here** — `git ls-files`
-  returns 17 entries (the 16 extracted files plus this document) and there is no
+  That path is in the old monorepo and **does not exist here** — there is no
   `40-engine/`. The instruction was correct where it was written and travelled
   unchanged through the extraction.
 - **Call any `/xrpc/com.etzhayyim.apps.outreach.*` method end to end.** Both
-  handlers proxy; neither implements. You need the live MCP router (or dispatcher)
-  and its credentials.
-- **Build or deploy the appview** ⚠ NOT WALKED. `svelte/package.json` declares
-  `vite build` with SvelteKit and `@sveltejs/adapter-cloudflare`, and there is no
-  lockfile or `node_modules` here, so a build needs a network install. It was not
-  run while writing this, and is therefore not claimed to work. If you do run it,
-  go through the repo-wide resource governor rather than invoking the build
-  directly:
+  handlers proxy; neither implements. You need the live MCP router (or
+  dispatcher) and its credentials.
+- **Build or deploy the appview** ⚠ NOT WALKED from this document (the
+  migration commit's own message claims a successful
+  `npx shadow-cljs compile app` run, but that is a claim from that commit,
+  not something re-walked here). The build now needs `npm install` at the
+  repo root (`deps.edn`'s `:cljs` alias + `package.json`'s `react`/`react-dom`),
+  then shadow-cljs. Go through the repo-wide resource governor rather than
+  invoking the build directly:
 
   ```bash
-  node <root>/scripts/resource-guard.mjs run build -- npm --prefix appview/outreach-otch0001/svelte run build
+  node <root>/scripts/resource-guard.mjs run build -- npx shadow-cljs compile app
   ```
+
+  `svelte/`, `vite build`, and `@sveltejs/adapter-cloudflare` no longer exist
+  in this repository as of 2026-09-05 — do not follow older instructions that
+  reference them.
 
 ---
 
