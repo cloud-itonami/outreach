@@ -11,7 +11,7 @@
     "APP_DESCRIPTION": "Sales Outreach Automation — LangGraph research→draft loop + DNC gate + Resend multi-step sequence + reply detection via gmail/m365Ingest.",
     "APP_DISPLAY_NAME": "etzhayyim Sales Outreach",
     "APP_EMBED_URL": "https://otch0001.etzhayyim.com/?embed=1",
-    "APP_FRAMEWORK": "sveltekit-edge-bff",
+    "APP_FRAMEWORK": "cljs-reagent-kotoba-ui-worker-assets",
     "APP_NANOID": "otch0001",
     "APP_PERFORMER_TYPE": "service",
     "APP_UI_TYPE": "appview",
