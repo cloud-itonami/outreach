@@ -134,14 +134,14 @@ Two consequences for an operator, updated for the current tree:
   dispatcher) and its credentials.
 - **Build or deploy the appview** ⚠ NOT WALKED from this document (the
   migration commit's own message claims a successful
-  `npx shadow-cljs compile app` run, but that is a claim from that commit,
+  `amu compile --target wasm32-browser app` run, but that is a claim from that commit,
   not something re-walked here). The build now needs `npm install` at the
   repo root (`deps.edn`'s `:cljs` alias + `package.json`'s `react`/`react-dom`),
   then shadow-cljs. Go through the repo-wide resource governor rather than
   invoking the build directly:
 
   ```bash
-  node <root>/scripts/resource-guard.mjs run build -- npx shadow-cljs compile app
+  node <root>/scripts/resource-guard.mjs run build -- amu compile --target wasm32-browser app
   ```
 
   `svelte/`, `vite build`, and `@sveltejs/adapter-cloudflare` no longer exist
