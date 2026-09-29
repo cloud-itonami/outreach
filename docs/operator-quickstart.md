@@ -124,7 +124,7 @@ Two consequences for an operator, updated for the current tree:
 
 ## 3. What you cannot do from this repository
 
-- **Start the outreach worker.** `CLAUDE.md` says
+- **Start the outreach worker.** `AGENTS.md` says
   `cd 40-engine/kotoba/crates/kotoba-kotodama/py && python -m kotodama.outreach_worker_main`.
   That path is in the old monorepo and **does not exist here** — there is no
   `40-engine/`. The instruction was correct where it was written and travelled
@@ -152,7 +152,7 @@ Two consequences for an operator, updated for the current tree:
 
 ## 4. Where the actual behaviour lives
 
-From `src/app.ts` and `CLAUDE.md`, and not verifiable from here:
+From `src/app.ts` and `AGENTS.md`, and not verifiable from here:
 
 | Thing | Where |
 |---|---|
